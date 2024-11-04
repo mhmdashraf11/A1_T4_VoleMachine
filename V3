@@ -1,0 +1,232 @@
+#include<bits/stdc++.h>
+#include <string>
+
+using namespace std;
+
+class Register {
+protected:
+    int Reg[16];
+public:
+    int getCell(int index) {
+        return Reg[index];
+    }
+    void setCell(int index, int value) {
+        Reg[index] = value;
+    }
+};
+
+static int registersize = 16;
+
+class Memory {
+private:
+    string memory[256];
+public:
+    int size = 256;
+
+    string getCell(int index) {
+        return memory[index];
+    }
+    void setCell(int index, string value) {
+        memory[index] = value;
+    }
+};
+
+class PC {
+    int address;
+public:
+    PC() {
+        address = 0;
+    }
+    void increment() {
+        address++;
+    }
+    void setValue(int newAddress) { // to jump
+        address = newAddress;
+    }
+    int getValue() {
+        return address;
+    }
+};
+
+class ALU {
+public:
+    int hexToDecimal(string str) {  // Return type changed to int
+        int dec = 0;
+        for (int i = 0; i < str.length(); i++) {
+            dec = dec * 16 + (str[i] >= 'A' ? str[i] - 'A' + 10 : str[i] - '0');
+        }
+        return dec;
+    }
+    int hexToDecimal(char c){
+        if(c>='0' && c<='9')
+            return c-'0';
+        if(c>='A' && c<='F')
+            return c-'A'+10;
+        if(c>='a' && c<='f')
+            return c-'a'+10;
+
+    }
+
+    string decimalToHex(int dec) {
+        if (dec == 0) return "0";  // Handle zero case
+
+        string hex = "";
+        while (dec > 0) {
+            int digit = dec % 16;
+            char hexChar = (digit < 10 ? '0' + digit : 'A' + (digit - 10));
+            hex = hexChar + hex;
+            dec /= 16;
+        }
+        return hex;
+    }
+    bool isValid(string str) {
+        for (char c : str) {
+            if (!(c >= '0' && c <= '9') &&!(c >= 'A' && c <= 'F')) {
+                return false;
+            }
+        }
+        return true;
+    }
+    void add(int idx1,int idx2,int idx3,Register& reg){
+        // Add two integers and store the result in register
+        int sum = reg.getCell(idx1) + reg.getCell(idx2);
+        reg.setCell(idx3, sum);
+    }
+};
+
+class CU: public Register {
+public:
+    void load(int intReg, int intMem, Register& Reg, Memory& Mem) {
+        ALU alu;
+        // Convert hex string from memory to decimal integer for register storage
+        int decimalValue = alu.hexToDecimal(Mem.getCell(intMem));
+        Reg.setCell(intReg, decimalValue);
+    }
+//    void loadFromRegisterToMemory(int intReg, int intMem, Register& Reg, Memory& Mem) {
+//        // Load value from register to memory
+//        Reg.getCell(intReg); // Simulate reading from register
+//        ALU alu;
+//        Mem.setCell(intMem, alu.decimalToHex(Reg.getCell(intReg))); // Convert decimal to hex string and store in memory
+//    }
+
+    void Store(int intReg, int intMem, Register& Reg, Memory& Mem){
+        // Store value from register to memory
+        Reg.getCell(intReg); // Simulate reading from register
+        ALU alu;
+        Mem.setCell(intMem, alu.decimalToHex(Reg.getCell(intReg))); // Convert decimal to hex string and store in memory
+    }
+    void jump(int newAddress, PC& PC) {
+        if (Reg[0] == Reg[4]) {
+            PC.setValue(newAddress);
+        }
+    }
+    void move(int idxReg1, int idxReg2, Register& reg) {
+        // Copy value from idxReg2 to idxReg1
+        reg.setCell(idxReg1, reg.getCell(idxReg2));
+
+        // Clear the source register (idxReg2)
+        reg.setCell(idxReg2, 0);
+    }
+    void halt(){
+        cout << "Program halted." << endl;
+        exit(0);
+    }
+};
+
+
+
+class CPU {
+private:
+    PC pc;
+    string IR;
+    Register reg;
+    ALU alu;
+    CU cu;
+    int op , cpureg;
+    string mem;
+
+public:
+
+    void runNextStep(Memory& mem1) {
+        fetch( mem1);
+    }
+    void fetch(Memory& mem2) {
+        IR = mem2.getCell(pc.getValue());
+        pc.increment();
+        if (IR == "C000") {
+            cu.halt();
+        }
+    }
+    void decode() {
+        op = IR[0] - '0', cpureg= IR[1] - '0' , mem = IR[2] + IR[3] ;
+    }
+    void execute(Memory& mem3, Register& reg1) {
+        int acc ;
+        switch (op) {
+            case 1:
+                cu.load(cpureg, alu.hexToDecimal(mem), reg , mem3 );
+                break;
+            case 3:
+                cu.Store(cpureg, alu.hexToDecimal(mem), reg, mem3);
+                break;
+            case 4:
+                cu.move(alu.hexToDecimal(mem[0]) , alu.hexToDecimal(mem[1]) , reg);
+                break;
+            case 5:
+                alu.add(alu.hexToDecimal(mem[0]) , alu.hexToDecimal(mem[1]) , cpureg, reg);
+                break;
+            case 66:
+                cu.jump(alu.hexToDecimal(mem), pc);
+                break;
+            default:
+                cout << "Invalid Operation." << endl;
+        }
+    }
+};
+
+class Machine{
+    private :
+    string filename ;
+    Memory mem;
+    CPU cpu;
+    Register reg;
+    PC pc;
+    public :
+    void setFilename(string filename){
+        this->filename = filename ;
+    }
+    void loadFromFile(){
+        ifstream file(filename);
+        string instruction;
+        if(!file.fail()){
+            cout << "Unable to open file";
+            return;
+        }
+        while(!file.eof() && mem.size>0){
+            getline(file,instruction,' ');
+            mem.setCell(mem.size, instruction);
+            mem.size--;
+        }
+        file.close();
+    }
+    void outputState(){
+        cout << "Memory state: ";
+        for(int i=0; i<mem.size; i++){
+            cout << mem.getCell(i) << " ";
+        }
+        cout << endl;
+        cout << "Register state: ";
+        for(int i=0; i<16; i++){
+            cout << reg.getCell(i) << " ";
+        }
+        cout << endl;
+        cout << "Program counter: " << pc.getValue() << endl;
+    }
+};
+
+class mainUI{
+    Machine machine;
+    bool enterFileOrInstruction;
+public:
+    
+};
