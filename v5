@@ -1,0 +1,273 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <iomanip>
+#include <cstdlib>
+
+using namespace std;
+
+class Register {
+protected:
+    string reg[16]; // Register array with 16 cells storing hexadecimal as strings
+
+public:
+    string getCell(int index) const {
+        return reg[index];
+    }
+    void setCell(int index, const string &value) {
+        reg[index] = value;
+    }
+};
+
+class Memory {
+private:
+    string memory[256]; // Memory with 256 cells
+public:
+    int size = 0; // Track memory usage
+
+    string getCell(int index) const {
+        return memory[index];
+    }
+    void setCell(int index, const string &value) {
+        memory[index] = value;
+    }
+};
+
+class PC {
+private:
+    int address = 0; // Program counter starting at 0
+
+public:
+    void increment() {
+        address+=2;
+    }
+    void setValue(int newAddress) { // for jump
+        address = newAddress;
+    }
+    int getValue() const {
+        return address;
+    }
+};
+
+class ALU {
+public:
+    int hexToDecimal(const string &hexStr) {
+        int decimalValue = 0;
+        for (char c : hexStr) {
+            decimalValue = decimalValue * 16 + (c >= 'A' ? c - 'A' + 10 : c - '0');
+        }
+        return decimalValue;
+    }
+
+    string decimalToHex(int dec) {
+        if (dec == 0) return "0";
+
+        string hex = "";
+        while (dec > 0) {
+            int digit = dec % 16;
+            char hexChar = (digit < 10 ? '0' + digit : 'A' + (digit - 10));
+            hex = hexChar + hex;  // Prepend hexChar to hex
+            dec /= 16;
+        }
+
+        return hex;
+    }
+
+    void add(int idx1, int idx2, int idx3, Register &reg) {
+        int value1 = hexToDecimal(reg.getCell(idx1));
+        int value2 = hexToDecimal(reg.getCell(idx2));
+        reg.setCell(idx3, decimalToHex(value1 + value2));
+    }
+};
+
+class CU {
+public:
+    void load(int regIdx, int memIdx, Register &reg, Memory &mem, ALU &alu) {
+        int decimalValue = alu.hexToDecimal(mem.getCell(memIdx));
+        reg.setCell(regIdx, alu.decimalToHex(decimalValue));
+    }
+
+    void store(int regIdx, int memIdx, Register &reg, Memory &mem, ALU &alu) {
+        mem.setCell(memIdx, reg.getCell(regIdx));
+    }
+
+    void jump(int newAddress, PC &pc, const Register &reg, int regIdx) {
+        if (reg.getCell(0) == reg.getCell(regIdx)) { // Condition check
+            pc.setValue(newAddress-2);
+            return;// Set PC to new address directly
+        } // Do not increment PC here
+        
+    }
+
+    void move(int regIdxSrc, int regIdxDest, Register &reg) {
+        reg.setCell(regIdxDest, reg.getCell(regIdxSrc));
+    }
+
+    void halt() {
+        cout << "Program halted." << endl;
+        exit(0);
+    }
+};
+
+class CPU {
+private:
+    string IR;
+    Register reg;
+    ALU alu;
+    CU cu;
+
+public:
+    void displayState(Memory& mem, PC& pc) const {
+        cout << "PC: " << hex << uppercase << pc.getValue() << ", IR: " << IR << endl; // Display PC in hexadecimal
+        cout << "Registers: ";
+        for (int i = 0; i < 16; i++) {
+            cout << reg.getCell(i) << " ";
+        }
+        cout << endl;
+        cout << "Memory: ";
+        for (int i = 0; i < 16; i++) {
+            for (int j = 0; j < 16; j++) {
+                cout << mem.getCell(i * 16 + j) << " ";
+            }
+            cout << endl;
+        }
+        cout << dec; // Reset to decimal for any further output
+    }
+
+    void fetch(Memory &mem, PC &pc) {
+        int pcValue = pc.getValue();
+        IR = mem.getCell(pcValue);
+        if (IR.empty()) {
+            cout << "Error: Instruction at PC " << pcValue << " is empty or invalid." << endl;
+            exit(1); // Exit the program or handle the error as needed
+        }
+        pc.increment(); // Increment the PC here for the next instruction
+    }
+
+    void decodeExecute(Memory &mem, PC &pc) {
+        if (IR.size() < 2) {
+            cout << "Error: Invalid instruction format. Instruction is too short." << endl;
+            exit(1);
+        }
+
+        char op = IR[0]; // Assuming op is numeric
+        int regIdx = IR[1] - '0';
+        string memAddr = IR.substr(2, 2);
+        int memIdx = alu.hexToDecimal(memAddr);
+
+        if (op == '1') {
+            cu.load(regIdx, memIdx, reg, mem, alu);
+        } else if (op == '2') {
+            reg.setCell(regIdx, memAddr);
+        } else if (op == '3') {
+            cu.store(regIdx, memIdx, reg, mem, alu);
+        } else if (op == '4') {
+            if (IR.size() >= 4) {
+                cu.move(IR[2] - '0', IR[3] - '0', reg);
+            } else {
+                cout << "Error: Invalid move instruction format." << endl;
+                exit(1);
+            }
+        } else if (op == '5') {
+            if (IR.size() >= 4) {
+                alu.add(IR[2] - '0', IR[3] - '0', IR[1] - '0', reg);
+            } else {
+                cout << "Error: Invalid add instruction format." << endl;
+                exit(1);
+            }
+        } else if (op == 'B') { // B op-code in hexadecimal
+            cu.jump(memIdx, pc, reg, IR[1] - '0'); // Call jump, which may set the PC
+            return; // Return immediately after a jump to prevent executing the next instruction
+        } else if (op == 'C') { // C op-code in hexadecimal
+            cu.halt();
+        } else {
+            cout << "Invalid Operation." << endl;
+        }
+    }
+
+    void run(Memory &memory, PC &pc) {
+        while (true) {
+            fetch(memory, pc); // Fetch instruction before executing
+            decodeExecute(memory, pc); // Decode and execute the instruction
+            displayState(memory, pc);
+            cout << "Press Enter to continue to the next instruction..." << endl;
+            cin.ignore();
+        }
+    }
+};
+
+
+class Machine {
+private:
+    CPU cpu;
+
+public:
+    void loadFromFile(const string &filename, Memory &mem, PC &pc) {
+        ifstream file(filename);
+        if (!file) {
+            cout << "Unable to open file." << endl;
+            return;
+        }
+        int startIdx = pc.getValue();  // Start loading instructions from the given PC address
+        string instruction;
+        while (file >> instruction && startIdx < 256) {
+            mem.setCell(startIdx, instruction); // Load instruction into memory at startIdx
+            startIdx+=2;  // Increment the startIdx for the next instruction
+            mem.size+=2; // Track memory usage
+        }
+        file.close();
+    }
+
+    void runProgram(Memory &mem,PC &pc) {
+        cpu.run(mem,pc);
+    }
+};
+
+class MainUI {
+private:
+    Machine machine;
+    ALU alu; // To convert hex to decimal
+
+public:
+    int displayMenu() {
+        cout << "Choose an option:" << endl;
+        cout << "1. Load program from file" << endl;
+        cout << "2. Exit" << endl;
+        int choice;
+        cin >> choice;
+        return choice;
+    }
+
+    int setPC(PC &pc) {
+        cout << "Enter the starting program counter address in hexadecimal:" << endl;
+        string hexAddress;
+        cin >> hexAddress;
+        int decimalAddress = stoi(hexAddress, nullptr, 16)-2; // Convert hex to decimal
+        pc.setValue(decimalAddress);
+        return decimalAddress;
+    }
+
+    void run(Memory &mem, PC &pc) {
+        int choice = displayMenu();
+        int startingAddress = setPC(pc);  // Set the initial PC address from the user input
+        while (choice != 2) {
+            if (choice == 1) {
+                cout << "Enter file name:" << endl;
+                string filename;
+                cin >> filename;
+                machine.loadFromFile(filename, mem, pc); // Load program starting from specified PC
+                machine.runProgram(mem, pc); // Run program from starting PC
+            } else {
+                cout << "Invalid choice." << endl;
+            }
+            choice = displayMenu();
+        }
+    }
+};
+
+int main() {
+    MainUI mainUI;
+    Memory mem;  // Initialize memory with 256 cells
+    PC pc;       // Initialize program counter
+    mainUI.run(mem, pc);
+}
