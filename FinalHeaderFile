@@ -1,0 +1,109 @@
+#ifndef MACHINE_SIMULATOR_H
+#define MACHINE_SIMULATOR_H
+
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <iomanip>
+#include <cstdlib>
+#include <filesystem>
+#include <cmath>
+#include <algorithm>
+
+using namespace std;
+
+class Register {
+protected:
+    vector<string> reg;
+
+public:
+    Register();
+    string getCell(int index) const;
+    void setCell(int index, const string &value);
+};
+
+class Memory {
+private:
+    vector<string> memory;
+
+public:
+    int size;
+    Memory();
+    string getCell(int index) const;
+    void setCell(int index, const string &value);
+};
+
+class PC {
+private:
+    int* address;
+
+public:
+    PC();
+    ~PC();
+    void increment();
+    void setValue(int newAddress);
+    int getValue() const;
+};
+
+class ALU {
+public:
+    int hexToDecimal(const string &hexStr);
+    string decimalToHex(int dec);
+    string decimalToHexTwosComplement(int value, int width = 2);
+    int hexToDecimalTwoComplement(const string &hex);
+    void add(int idx1, int idx2, int idx3, Register &reg);
+    double binToDecF(string s);
+    string decToBinF1(int n);
+    double hexaToDecF(string num);
+    string decToBinF(double num);
+    string binToHex(string bin);
+    string Ans(string bin);
+    void addFloatingPoint(int idx1, int idx2, int idx3, Register &reg);
+};
+
+class CU {
+public:
+    void load(int regIdx, int memIdx, Register &reg, Memory &mem, ALU &alu);
+    void store(int regIdx, int memIdx, Register &reg, Memory &mem);
+    void jump(int newAddress, PC &pc, const Register &reg, int regIdx);
+    void move(int regIdxSrc, int regIdxDest, Register &reg);
+    bool halt();
+};
+
+class CPU {
+private:
+    string IR;
+    Register reg;
+    ALU alu;
+    CU cu;
+
+public:
+    void displayState(Memory &mem, PC &pc) const;
+    void fetch(Memory &mem, PC &pc);
+    bool decodeExecute(Memory &mem, PC &pc);
+    bool run(Memory &memory, PC &pc);
+};
+
+class Machine {
+private:
+    CPU cpu;
+
+public:
+    void loadFromFile(const string &filename, Memory &mem, PC &pc);
+    bool runProgram(Memory &mem, PC &pc);
+};
+
+class MainUI {
+private:
+    Machine machine;
+    ALU alu;
+
+public:
+    int displayMenu();
+    int setPC(PC &pc);
+    void loadInstructionsManually(Memory &mem, PC &pc);
+    void run(Memory &mem, PC &pc);
+};
+
+#endif // MACHINE_SIMULATOR_H
