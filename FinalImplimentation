@@ -1,0 +1,512 @@
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <cmath>
+#include <algorithm>
+#include <iomanip>
+#include <sstream>
+#include"machine_simulator.h"
+
+using namespace std;
+
+// Register class implementation
+Register::Register() : reg(16, "00") {}
+
+string Register::getCell(int index) const {
+    return reg[index];
+}
+
+void Register::setCell(int index, const string &value) {
+    reg[index] = value;
+}
+
+// Memory class implementation
+Memory::Memory() : memory(256, "00") {}
+
+string Memory::getCell(int index) const {
+    return memory[index];
+}
+
+void Memory::setCell(int index, const string &value) {
+    memory[index] = value;
+}
+
+// PC class implementation
+PC::PC() {
+    address = new int(0);
+}
+
+PC::~PC() {
+    delete address;
+}
+
+void PC::increment() {
+    *address += 2;
+}
+
+void PC::setValue(int newAddress) {
+    *address = newAddress;
+}
+
+int PC::getValue() const {
+    return *address - 2;
+}
+
+
+
+int ALU::hexToDecimal(const string &hexStr) {
+    int decimalValue = 0;
+    for (char c : hexStr) {
+        decimalValue = decimalValue * 16 + (c >= 'A' ? c - 'A' + 10 : c - '0');
+    }
+    return decimalValue;
+}
+
+string ALU::decimalToHex(int dec) {
+    if (dec == 0) return "00";
+
+    string hex = "";
+    while (dec > 0) {
+        int digit = dec % 16;
+        char hexChar = (digit < 10 ? '0' + digit : 'A' + (digit - 10));
+        hex = hexChar + hex;  // Prepend hexChar to hex
+        dec /= 16;
+    }
+
+    return hex.size() == 1 ? "0" + hex : hex; // Ensure 2 characters
+}
+
+
+// Convert signed integer to hexadecimal string (two's complement)
+string ALU::decimalToHexTwosComplement(int value, int width ) {
+    if (width == 2) { // for 8-bit two's complement
+        value &= 0xFF;
+    } else if (width == 4) { // for 16-bit two's complement
+        value &= 0xFFFF;
+    }
+
+    stringstream ss;
+    ss << hex << uppercase << setw(width) << setfill('0') << (value & 0xFFFF);
+    return ss.str();
+}
+
+
+int ALU::hexToDecimalTwoComplement(const string &hex) {
+    int numBits = 8;
+    int maxPositiveValue = pow(2, numBits - 1) - 1;  // Max positive value for the given bits
+    int maxValue = pow(2, numBits);                  // Max value for the given bits
+
+    // Convert hexadecimal to decimal
+    int decimalValue = stoi(hex, nullptr, 16);
+
+    // If the decimal value exceeds the max positive value, it's negative in two's complement
+    if (decimalValue > maxPositiveValue) {
+        decimalValue = decimalValue - maxValue; // Apply two's complement
+    }
+
+    return decimalValue;
+}
+
+
+// Add two hexadecimal numbers using two's complement arithmetic
+void ALU::add(int idx1, int idx2,int idx3,Register& reg) {
+    string hex1 = reg.getCell(idx2);
+    string hex2= reg.getCell(idx3);
+
+    int num1 = hexToDecimalTwoComplement(hex1);
+    int num2 = hexToDecimalTwoComplement(hex2);
+
+    int sum = num1 + num2;
+
+    // Assuming an 8-bit result, change the second argument for other widths (e.g., 4 for 16-bit)
+    string result = decimalToHexTwosComplement(sum, hex1.size());
+    reg.setCell(idx1, result);
+}
+double ALU::binToDecF (string s){
+    double dec=0;
+    int sign=1;
+    if(s[0]=='-'){
+        s.erase(s.begin());
+        sign=-1;
+    }
+    int decimalPos=find(s.begin(),s.end(),'.')-s.begin();
+
+    for ( int i = 0; i < decimalPos; i++)   {
+        dec += (s[i] - '0') * pow(2, decimalPos-i-1);
+    }int power=-1;
+    for(int i=decimalPos+1; i < s.size(); i++){
+        dec+=(s[i]-'0')*pow(2,power);
+        power--;
+    }
+    if(sign==-1){
+        dec*=-1;
+    }
+
+    return dec;
+}
+string ALU::decToBinF1(int n){
+    string bin = "";
+    while (n > 0) {
+        bin = to_string(n % 2) + bin;
+        n /= 2;
+    }
+    for(int i=0;bin.size()<4;i++){
+        bin="0"+bin;
+    }
+    return bin;
+}
+
+double ALU::hexaToDecF(string num) {
+    string hexnum="0123456789ABCDEF";
+    string bin;
+    string stringNum1=decToBinF1((find(hexnum.begin(), hexnum.end(),num[0])-hexnum.begin()));
+    string stringNum2=decToBinF1((find(hexnum.begin(), hexnum.end(),num[1])-hexnum.begin()));
+
+    int sign=stringNum1[0]=='1'?-1:1;
+
+    int exponent= binToDecF(stringNum1.substr(1,3));
+
+    exponent-=4;
+
+    if(exponent>0) {
+        stringNum2.insert(exponent, ".");
+    }
+    if(exponent<0){
+        for(int i=0; i>exponent; i--){
+            stringNum2.insert(0, "0");
+        }
+    }
+    if(sign==-1) {
+        stringNum2 = "-" + stringNum2;
+    }
+    if(exponent<=0) {
+        stringNum2 = "0." + stringNum2;
+    }
+    double finalValue=binToDecF(stringNum2);
+    return finalValue;
+
+}
+string ALU::decToBinF(double num){
+    string bin;
+    string stringNum1=to_string(num);
+    int sign=1;
+    if(stringNum1[0]=='-')
+    {
+        sign=-1;
+        stringNum1.erase(stringNum1.begin());
+
+    }
+    for(int i=stringNum1.size()-1; i>=0,stringNum1[i]=='0';i--){
+        stringNum1.pop_back();
+    }
+
+    int stringNum2=stod(stringNum1);
+    string remainder5;
+    for(int i=0; i<stringNum1.length(); i++){
+        if(stringNum1[i]=='.'){
+            i++;
+            for(;i<stringNum1.length();i++){remainder5+=stringNum1[i];
+
+            };
+        }
+    }
+    remainder5="0."+remainder5;
+    double remainder=stod(remainder5);
+
+    while(stringNum2>0){
+        bin=to_string(stringNum2%2)+bin;
+        stringNum2/=2;
+    }
+    bin+='.';
+
+    while(remainder>0){
+        remainder*=2;
+        if(remainder>=1){
+            bin+="1";
+            remainder-=1;
+        }
+        else bin+="0";
+    }
+    if(sign==-1){
+        bin="-"+bin;}
+
+    return bin;
+}
+string ALU::binToHex(string bin){
+    string hex;
+    int middle=0;
+    if(bin[0]=='-'){
+        hex+="1";
+        bin.erase(bin.begin());
+    }
+    else hex+="0";
+    for(int i=0;i<bin.size();i++){
+        if(bin[i]=='.')break;
+        middle++;
+    }
+    middle+=4;
+    string first=decToBinF1(middle);
+    for(int i=0;first.size()>3;i++){
+        first.erase(first.begin());}
+    hex+=first;
+
+    string last;
+    for(int i=0;i<bin.size();i++){
+        if(bin[i]=='.')continue;
+        last+=bin[i];
+
+    }
+    hex+=last;
+    for(int i=0;8>hex.size();i++){
+        hex+="0";
+    }
+
+    return hex;
+}
+string ALU::Ans(string bin){
+    string hex1=bin.substr(0,4);
+    string hex2=bin.substr(4,8);
+    double hex10=binToDecF(hex1);
+    double hex20=binToDecF(hex2);
+    string hexastr="0123456789ABCDEF";
+    string ans;
+    ans+=hexastr[(int)hex10];
+    ans+=hexastr[(int)hex20];
+
+    return ans;
+
+}
+void ALU::addFloatingPoint(int idx1, int idx2, int idx3, Register &reg) {
+    // Retrieve the hex values from the registers
+    string hexS = reg.getCell(idx2);
+    string hexT = reg.getCell(idx3);
+    double deccimalS = hexaToDecF(hexS);
+    double deccimalT = hexaToDecF(hexT);
+    double sum = deccimalS + deccimalT;
+    string hexSum = Ans(binToHex(decToBinF(sum)));
+    reg.setCell(idx1, hexSum);
+}
+void CU::load(int regIdx, int memIdx, Register &reg, Memory &mem, ALU &alu) {
+    int decimalValue = alu.hexToDecimal(mem.getCell(memIdx));
+    reg.setCell(regIdx, alu.decimalToHex(decimalValue));
+}
+
+void CU::store(int regIdx, int memIdx, Register &reg, Memory &mem) {
+    mem.setCell(memIdx, reg.getCell(regIdx));
+}
+
+void CU::jump(int newAddress, PC &pc, const Register &reg, int regIdx) {
+    if (reg.getCell(0) == reg.getCell(regIdx)) {
+        pc.setValue(newAddress );
+        return;
+    }
+}
+
+void CU::move(int regIdxSrc, int regIdxDest, Register &reg) {
+    reg.setCell(regIdxDest, reg.getCell(regIdxSrc));
+}
+
+bool CU::halt() {
+//        cout << "Program halted." << endl;
+    return true; // Return true to indicate a halt
+}
+void CPU::displayState(Memory& mem, PC& pc) const {
+    cout << "PC: " << hex << uppercase << pc.getValue() << ", IR: " << IR << endl;
+    cout << "Registers: ";
+    for (int i = 0; i < 16; i++) {
+        cout << reg.getCell(i) << " ";
+    }
+    cout << endl;
+    cout << "Memory: ";
+    for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+            cout << mem.getCell(i * 16 + j) << " ";
+        }
+        cout << endl;
+    }
+    cout << dec;
+}
+
+void CPU::fetch(Memory &mem, PC &pc) {
+    int pcValue1 = pc.getValue();
+    int pcValue2 = pc.getValue()+1;
+    pc.increment();
+    IR = mem.getCell(pcValue1) + mem.getCell(pcValue2);
+    if (IR.empty()) {
+        cout << "Error: Instruction at PC " << pcValue1 << " is empty or invalid." << endl;
+        exit(1);
+    }
+}
+
+bool CPU::decodeExecute(Memory &mem, PC &pc) {
+    if (IR.size() < 2) {
+        cout << "Error: Invalid instruction format. Instruction is too short." << endl;
+        exit(1);
+    }
+
+    char op = IR[0];
+    int regIdx = IR[1] - '0';
+    string memAddr = IR.substr(2, 2);
+    int memIdx = alu.hexToDecimal(memAddr);
+
+    if (op == '1') {
+        cu.load(regIdx, memIdx, reg, mem, alu);
+    } else if (op == '2') {
+        reg.setCell(regIdx, memAddr);
+    } else if (op == '3') {
+        cu.store(regIdx, memIdx, reg, mem);
+    } else if (op == '4') {
+        if (IR.size() >= 4) {
+            cu.move(IR[2] - '0', IR[3] - '0', reg);
+        } else {
+            cout << "Error: Invalid move instruction format." << endl;
+            exit(1);
+        }
+    } else if (op == '5') {
+        if (IR.size() >= 4) {
+            alu.add(IR[1] - '0', IR[2] - '0', IR[3] - '0', reg);
+        } else {
+            cout << "Error: Invalid add instruction format." << endl;
+            exit(1);
+        }
+    } else if (op == '6') {
+        if (IR.size() >= 4) {
+            alu.addFloatingPoint(IR[1] - '0', IR[2] - '0', IR[3] - '0', reg);
+        } else {
+            cout << "Error: Invalid add instruction format." << endl;
+            exit(1);
+        }
+    } else if (op == 'B') {
+        cu.jump(memIdx, pc, reg, IR[1] - '0');
+        return false; // Continue executing instructions after jump
+    } else if (op == 'C') {
+        return cu.halt(); // Return true to indicate halt
+    } else {
+        cout << "Invalid Operation." << endl;
+    }
+    return false; // No halt
+}
+
+bool CPU::run(Memory &memory, PC &pc) {
+    while (true) {
+        fetch(memory, pc);
+        if (decodeExecute(memory, pc)) return true; // Check if the program has halted
+        displayState(memory, pc);
+    }
+    return false; // Should not reach here, but just for safety
+}
+
+void Machine::loadFromFile(const std::string &filename, Memory &mem, PC &pc) {
+    cout << "Attempting to open file: " << filename << endl;
+
+    // Check if the file exists
+    if (!filesystem::exists(filename)) {
+        cout << "File does not exist: " << filename << endl;
+        return;
+    }
+
+    ifstream file(filename);
+    if (file.fail()) {
+        cout << "Unable to open file." << endl;
+        return;
+    }
+
+    int startIdx = pc.getValue();
+    string instruction;
+    while (file >> instruction && startIdx < 256) {
+        // Ensure the instruction is exactly 4 characters (e.g., "20FB")
+        if (instruction.size() == 4) {
+            string firstPart = instruction.substr(0, 2);  // First two characters (e.g., "20")
+            string secondPart = instruction.substr(2, 2); // Last two characters (e.g., "FB")
+
+            mem.setCell(startIdx, firstPart);
+            startIdx += 1;
+            mem.setCell(startIdx, secondPart);
+            startIdx += 1;
+            mem.size += 2;
+        } else {
+            cout << "Invalid instruction format in file: " << instruction << endl;
+        }
+    }
+    file.close();
+}
+
+bool Machine::runProgram(Memory &mem, PC &pc) {
+    return cpu.run(mem, pc); // Return true if the program halts
+}
+int MainUI::displayMenu() {
+    cout << "Choose an option:" << endl;
+    cout << "1. Load program from file" << endl;
+    cout << "2. Enter instructions manually" << endl;
+    cout << "3. Exit" << endl;
+    int choice;
+    cin >> choice;
+    return choice;
+}
+
+int MainUI::setPC(PC &pc) {
+    cout << "Enter the starting program counter address in hexadecimal:" << endl;
+    string hexAddress;
+    cin >> hexAddress;
+    int decimal = alu.hexToDecimal(hexAddress);
+    pc.setValue(decimal);
+
+    return decimal;
+}
+
+void MainUI::loadInstructionsManually(Memory &mem, PC &pc) {
+    cout << "Enter instructions (4 characters each, e.g., '20FB'). Type 'C000' to stop entering instructions." << endl;
+    int currentAddress = pc.getValue();
+
+    while (true) {
+        string instruction;
+//            cout << "Instruction: ";
+        cin >> instruction;
+
+        // Check if instruction is 'C000' to stop taking inputs
+        if (instruction == "C000") {
+            mem.setCell(currentAddress, "C0");
+            mem.setCell(currentAddress + 1, "00");
+            break;
+        }
+
+        // Ensure the instruction is exactly 4 characters
+        if (instruction.size() != 4) {
+            cout << "Invalid instruction format. Please enter exactly 4 characters." << endl;
+            continue;
+        }
+
+        // Split the instruction and store it in memory
+        mem.setCell(currentAddress, instruction.substr(0, 2));
+        mem.setCell(currentAddress + 1, instruction.substr(2, 2));
+        currentAddress += 2;
+        mem.size += 2;
+    }
+}
+
+
+void MainUI::run(Memory &mem, PC &pc) {
+    while (true) {
+        int choice = displayMenu();
+        if (choice == 3) break;
+        int startingAddress = setPC(pc);
+
+        if (choice == 1) {
+            cout << "Enter file name:" << endl;
+            string filename;
+            cin >> filename;
+            machine.loadFromFile(filename, mem, pc);
+            bool halted = machine.runProgram(mem, pc);
+            if (halted) cout << "Program halted. Returning to main menu." << endl;
+        }
+        else if (choice == 2) {
+            loadInstructionsManually(mem, pc);
+            bool halted = machine.runProgram(mem, pc);
+            if (halted) cout << "Program halted. Returning to main menu." << endl;
+        }
+        else {
+            cout << "Invalid choice." << endl;
+        }
+    }
+
+}
