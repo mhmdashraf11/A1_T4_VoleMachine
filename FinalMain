@@ -1,0 +1,9 @@
+#include "machine_simulator.h"
+
+int main() {
+    MainUI mainUI;
+    Memory mem;
+    PC pc;
+    mainUI.run(mem, pc);
+    return 0;
+}
